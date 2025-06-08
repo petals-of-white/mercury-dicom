@@ -5,10 +5,10 @@
 :- module dicom.
 
 :- interface.
-:- import_module io.
-:- import_module string.
-:- import_module list.
-:- import_module array.
+:- import_module io, string, list, array, char.
+% :- import_module string.
+% :- import_module list.
+% :- import_module array.
 
 % DICOM tag
 :- type tag ---> tag(group::uint16, element::uint16).
@@ -95,10 +95,38 @@
 % Reserved VLs
 :- pred is_vl_reserved(vr::out) is multi.
 
+
+% Generic parsing utilities
+% #########################
+
+% Skips N elements in list, fails if input's length is lesser then N
+:- pred skip(int, list(T), list(T)).
+:- mode skip(in, in, out) is semidet.
+
+% Parse as many times as possible
+:- pred read_all(pred(B, list(A), list(A)), list(B), list(A), list(A)).
+:- mode read_all(pred(out, in, out) is semidet, out, in, out) is det.
+
+% Almost like split_list
+:- pred take(int, list(T), list(T), list(T)).
+:- mode take(in, out, in, out) is semidet.
+
+:- func uint8_to_char(uint8) = char.
+
+% Parse uint16 little endian
+:- pred uint16_le(uint16, list(uint8), list(uint8)).
+:- mode uint16_le(out, in, out) is semidet.
+
+% Parse uint32 little endian
+:- pred uint32_le(uint32, list(uint8), list(uint8)).
+:- mode uint32_le(out, in, out) is semidet.
+
+
 :- implementation.
-:- import_module char.
+
 :- import_module uint16, uint8, uint32, uint64, integer, int64, int.
 :- import_module stream.
+
 
 is_vl_reserved(ob).
 is_vl_reserved(ow).
@@ -168,34 +196,28 @@ read_file_byte_list(FileName, ListResult, !IO) :-
     ).
 
 
-% Generic parsing utilities
-% #########################
 
-% Skips N elements in list, fails if input's length is lesser then N
-:- pred skip(int, list(T), list(T)).
-:- mode skip(in, in, out) is semidet.
 skip(N) --> (if {(N < 1)} then [] else [_], skip(N-1)).
 
-% Parse as many times as possible
-:- pred read_all(pred(B, list(A), list(A)), list(B), list(A), list(A)).
-:- mode read_all(pred(out, in, out) is semidet, out, in, out) is semidet.
-read_all(P, [Head | Tail]) -->
-    P(Head), (read_all(P, Rest) -> {Tail = Rest}; {Tail = []}).
+% read_all(P, [Head | Tail]) -->
+%     P(Head), (read_all(P, Rest) -> {Tail = Rest}; {Tail = []}).
 
-% Almost like split_list
-:- pred take(int, list(T), list(T), list(T)).
-:- mode take(in, out, in, out) is semidet.
+read_all(P, Result) --> read_all(P, [], Result).
+
 take(N, Start, List, End) :- list.split_list(N, List, Start, End).
 
-:- func uint8_to_char(uint8) = char.
 uint8_to_char(V) = char.det_from_int(uint8.to_int(V)).
 
-% Parse uint16 little endian
-:- pred uint16_le(uint16, list(uint8), list(uint8)).
-:- mode uint16_le(out, in, out) is semidet.
 uint16_le(Uint16) --> [Byte1, Byte2], {Uint16 = uint16.from_bytes_le(Byte1, Byte2)}.
 
-% Parse uint32 little endian
-:- pred uint32_le(uint32, list(uint8), list(uint8)).
-:- mode uint32_le(out, in, out) is semidet.
 uint32_le(Uint32) --> [Byte1, Byte2, Byte3, Byte4], {Uint32 = uint32.from_bytes_le(Byte1, Byte2, Byte3, Byte4)}.
+
+:- pred read_all(pred(B, list(A), list(A)), list(B), list(B), list(A), list(A)).
+:- mode read_all(pred(out, in, out) is semidet, in, out, in, out) is det.
+
+read_all(P, Acc, Result) -->
+    (P(Head) ->
+        read_all(P, [Head | Acc], Result)
+    ;
+        {Result = reverse(Acc)}
+    ).
